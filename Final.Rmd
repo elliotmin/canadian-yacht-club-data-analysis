@@ -1,0 +1,254 @@
+---
+title: "Optimizing demographic experience of the RCYC members"
+author: "Elliot Min"
+output:
+  beamer_presentation:
+    theme: default
+    colortheme: seahorse
+    fonttheme: default
+    slide_level: 2
+  ioslides_presentation: default
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(rpart)
+library(partykit)
+library(tinytex)
+# here is the data for this project
+RCYC <- read_csv("STA130_project_data.csv")
+
+```
+
+
+## Introduction
+Using statistical analysis we will be providing the Royal Canadian Yacht Club insight on how to best manage their resources to maximize value. The data we are referencing includes 1000 people, represented twice in the year 2017 and 2020, so a sample of 2000 total. Using this data, we will try to learn how certain demographics in the club use various facilities, and we will investigate the following questions:
+
+1. Is the median amount of other spending at RCYC facilities for females the same as the median amount of spending for males?
+
+2. Is the average amount of island spending for people who have docks equal to that of those who do not have a dock?
+
+3. Is the proportion of males in the Royal Canadian Yacht Club equal to that of the proportion of females in the Royal Canadian Yacht Club?
+
+## Objective 1. Is the median amount of other spending at RCYC facilities for females the same as the median amount of spending for males?
+
+We are trying to find out whether the median amount of other spending at RCYC facilities is the same for males and females.
+
+We will be referencing the sex and the amount of other spending for each member from the sample.
+
+- Is the median amount of other spending at RCYC facilities for females the **same** as the median amount of other spending for males?
+
+OR
+
+- Is the median amount of other spending at RCYC facilities for females **different** than the median amount of other spending for males?
+
+
+## Data Summary - 1
+- To clean the data, we filtered out all the rows with unavailable data on the sex or the amount of other spending of a person.
+
+- While going through the dataset, we realized that many of the other_spending cells were not available for 2020, and so we chose to filter out 2020 data. 
+
+- We also chose to filter out spending that is above $2500 because this indicated outliers and made the data harder to visualize. 
+
+- With this data, we created a summary table that shows each gender's median amount of other spending at RCYC facilities.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+q1_data <- RCYC %>% filter(!is.na(other_spending), !is.na(Sex), year == "2017") %>% 
+  filter(other_spending < 2500 )
+group_median <- q1_data %>% group_by(Sex) %>% summarise(median = median(other_spending))
+group_median
+
+```
+
+
+## Statistical Methods - 1
+- In our sample of 1000 RCYC members, we found that the difference in the median other spending between men and women is $50.
+
+- To test whether the median is the same, we randomly redistributed the spendings from the data to see if this $50 discrepancy is likely when redistributed.
+
+- Then, we repeat the simulation 1000 times, with the ultimate goal of comparing our median difference value of $50 to the median difference calculated by these simulations. 
+
+- The proportion of simulations as extreme as our difference in the median other spending between men and women will indicate whether there is a true difference in median other spending.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+set.seed(123)
+repetitions <- 1000
+simulated_values <- rep(NA, repetitions)
+
+for(i in 1:repetitions){
+  simdata <- q1_data %>% mutate(Sex = sample(Sex))
+  
+  sim_value <- simdata %>% group_by(Sex) %>% 
+    summarise(medians = median(other_spending)) %>%
+    summarise(value = diff(medians))
+    
+  simulated_values[i] <- as.numeric(sim_value)
+}
+```
+
+## Results - 1a
+```{r, message= FALSE, echo=FALSE, message=FALSE, warning=FALSE, out.width="90%", out.height = "50%", fig.cap="Distribution of Other Spending Between Males and Females"}
+sim <- tibble(median_diff = simulated_values)
+
+q1_data %>% ggplot(aes(x=other_spending, y=Sex)) +
+  geom_boxplot()
+
+```
+\footnotesize
+- We can see the median value in the middle of the box, and median spending for both sexes appears relatively close.
+- One limitation of this data is the outliers. We have already excluded any spending above 2500 because so few people spend this much, however, there is still a large amount of outliers. 
+
+## Results - 1b
+```{r, message= FALSE, echo=FALSE}
+p_value <- sim %>% filter(median_diff >= 50 | median_diff <= -50) %>% summarise(p_value = n()/repetitions)
+
+tester <- group_median %>% summarise(test_stat = diff(median), p_value = as.numeric(p_value))
+tester
+
+```
+- Based on the simulations discussed earlier, we find that there is a 16.9% probability of obtaining our sample result of a $50 difference if there is really no difference in spending between males and females. While 16.9% may seem unlikely, in statistical terms, this is sufficient evidence to show that our result is possible. 
+- We conclude that there is no evidence suggesting the median spending between males and females is different. 
+
+## Objective 2. Is the average amount of island spending for people who have docks equal to that of those who do not have a dock?
+
+We have decided to look at the correlation between island dining, age, and having a dock in RCYC members. 
+
+This question will allow the RCYC to understand whether members that rent a dock spend more on island dining than those who don’t rent a dock, depending on their age. Based on the amount spent by category, the club can determine whether their prices for food and dock prices are just right or too high.
+
+## Data Summary - 2
+- This test requires observations from the variable “dock” and “island_dining.” “island_dining” is only available for 2017, so we were limited to using data for both variables from 2017.
+
+- We also filtered out any data that did not have a value for dock usage, island dining, or age, since we need these variables to find a relationship between the three. 
+
+- We also chose to filter out spending that is above 2500 because this indicated outliers and made the data harder to visualize.
+
+```{r, message= FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+q2_data <- RCYC %>% filter(year == 2017) %>% 
+  filter(!is.na(dock) | !is.na(island_dining) | !is.na(Age)) %>%
+  filter(island_dining < 2500 )
+```
+
+## Statistical Methods - 2
+- Using the data as described earlier, we will first look at a boxplot to  view the relationship between dock and island dining. This will help us get an initial idea for what the relationship may look like. 
+
+- We will then look at a linear regression model, which will observe the relationship between age, dock, and island spending by plotting a line of best fit. 
+
+```{r, message= FALSE, echo=FALSE, message=FALSE, warning=FALSE, out.width="80%", out.height = "40%", fig.cap="Distribution of docks and island dining"}
+
+q2_data %>% ggplot(aes(x=dock, y=island_dining)) +
+  geom_boxplot()+
+  coord_flip()
+
+```
+
+## Results - 2a
+\footnotesize
+- We can look at the boxplot to get an initial sense of the correlation between having a dock and island spending. 
+
+- We can see that the median amount spent on island dining for members who rent a dock is greater than the amount spent by the majority of members who do not rent a dock.
+
+- Those who can afford to rent a dock for their yacht must be very wealthy, which may explain why they're able to spend so much on island dining compared to those who don't own yachts or rent docks.
+
+```{r, message= FALSE, echo=FALSE, message=FALSE, warning=FALSE, out.width="65%", out.height = "43%", fig.cap="Correlation between age, island dining, and dock", ps=12}
+
+q2_data %>% ggplot(aes(x=Age, y=island_dining, color = dock)) +
+  geom_point() +
+  geom_smooth(method="lm", se=FALSE)
+
+```
+## Results - 2b
+\small
+- The model shows a stronger relationship between age and island dining for those that have a dock compared to those that do not have a dock. 
+- Those with a dock have a negative relationship, meaning as they get older, they tend to spend less. 
+- Those without a dock seem to have a positive relationship, but it is much weaker. 
+
+One big limitation of this model is the fact that there are so many low values. We can see from the plot that many people spent close to or under $250, which makes it harder to distinguish a relationship. 
+
+Another limitation is that we could only use 2017 data, as the data was unavailable for 2020, which could indicate some issues if there have been changes made between 2017 and now. 
+
+## Objective 3. Is the proportion of males in the Royal Canadian Yacht Club equal to that of the proportion of females in the Royal Canadian Yacht Club?
+
+We are trying to find out whether the proportion of males in the RCYC is equal to the proportion of females in the RCYC.
+
+We will be referencing the sex of the members in the sample.
+
+- Is the proportion of males **equal** to the proportion of females in the RCYC? 
+
+OR
+
+- Is the proportion of males **not equal** to the proportion of females in the RCYC?
+
+
+## Data Summary - 3
+
+- To clean the data, we  filtered out the rows with data that is unavailable on the sex of the person.
+
+- We also made sure to only include the year 2017 as most of the 2020 data is just overlap of the same member just in a different year.
+
+- With this data, we created a summary table that shows the proportion of males in the RCYC.
+
+```{r, message= FALSE, echo=FALSE}
+data2017 <- RCYC %>%  filter(year == 2017) %>%
+  filter(!is.na(Sex))
+
+male2017 <- data2017 %>% filter(Sex == "M")
+
+data2017 %>% summarise(prop_male = nrow(male2017)/nrow(data2017))
+
+```
+
+## Statistical Methods - 3 
+- In our sample of 1000 RCYC members, we found that about 69.77% of the members in that sample are male. At a first glance, we can already see that this is a very high number. 
+
+-  One limitation of this data could be that it is not entirely representative. Since we only know that the data is random, there’s a possibility that it isn’t representative.
+
+- We want to test if this proportion of 69.77% from the sample is possible if there is really an even split between males and females. 
+
+- To test this, we ran 2000 simulations under the assumptions that there is an equal amount of males as there are females. 
+
+- From these simulations, we ended up with 2000 new proportions that we can compare to our data to see the likelihood of getting a 69.77%. 
+
+
+## Results - 3a
+```{r, message= FALSE, echo=FALSE, out.width="70%", out.height = "67%", fig.cap= "Sex Distribution"}
+data2017 <- RCYC %>% filter(year == 2017) %>%
+  filter(!is.na(Sex))
+
+
+male2017 <- data2017 %>% filter(Sex == "M")
+our_p_male <- 697/1000
+
+simulated_stats <- rep(NA, 2000)
+
+set.seed(10) 
+for (i in 1:2000){
+  new_sim <- sample(c("Male","Female"), size=1000, prob=c(0.5, 0.5), replace=TRUE)
+  sim_p <- sum(new_sim == "Male")/1000
+  
+  simulated_stats[i] <- sim_p
+}
+
+ggplot(data = data2017, aes(x = Sex)) + geom_bar(color = "black", fill = "thistle") + labs(x = "Gender")
+
+sim <- tibble (p_male = simulated_stats)
+
+```
+\footnotesize
+As we can see from the bar plot, there are more than twice as many males as females.
+
+## Results - 3b
+
+- Based on the simulations discussed earlier, we find that there is a 0% probability of obtaining our sample result of a 69.77% proportion if there is really an equal (50%) proportion.
+
+- While we see a 0% probability, this value is obviously not
+accurate. If we took an infinite number of samples rather than 2000, we would see that this value is possible. However, a proportion of 69.77% never showed up in our 2000 simulations.
+
+- We conclude that there is very strong evidence suggesting the proportion of males and females is different
+
+## Conclusion
+**Q1:** Since we concluded that the median value for men and women is the same, we can conclude that there is little to no discrimination for men and women in other spending, so the RCYC is doing a good job in this area. 
+
+**Q2:** Since we see more spending amongst those with a dock in general, as well as younger dock users, the RCYC can consider either catering specifically to those with docks because they spend more money, or they can try to cater to those without docks to even out spending between groups.
+
+**Q3:** Because we see that there are many more male members at the RCYC than there are female members, we would suggest that the RCYC make changes to attract more female members. This could include implementing facilities such as a spa, or if their marketing strategy is mostly male oriented, perhaps they should change their marketing technique to appeal more to women, which would incentivize women to join the club.
